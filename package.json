@@ -1,0 +1,38 @@
+{
+  "name": "gatsby-source-cloudcms",
+  "description": "Gatsby plugin for accessing your Cloud CMS projects",
+  "version": "1.0.0",
+  "author": "Michael Whitman <michael.whitman@cloudcms.com",
+  "dependencies": {
+    "@babel/runtime": "^7.6.2",
+    "cloudcms": "^0.1.0",
+    "graphql-tools": "^3.1.1",
+    "uuid": "^3.3.3"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.6.2",
+    "@babel/core": "^7.6.2",
+    "babel-preset-gatsby-package": "^0.2.7",
+    "cross-env": "^6.0.0"
+  },
+  "homepage": "https://cloudcms.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gitana/gatsby-source-graphql"
+  },
+  "keywords": [
+    "gatsby",
+    "gatsby-plugin",
+    "cloudcms",
+    "cms"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=8.0.0"
+  },
+  "scripts": {
+    "build": "babel src --out-dir .",
+    "prepare": "cross-env NODE_ENV=production npm run build",
+    "watch": "babel -w src --out-dir ."
+  }
+}

@@ -1,8 +1,23 @@
 {
   "name": "gatsby-source-cloudcms",
+  "version": "1.1.0",
   "description": "Gatsby plugin for accessing your Cloud CMS projects",
-  "version": "1.0.0",
+  "main": "index.js",
   "author": "Michael Whitman <michael.whitman@cloudcms.com",
+  "homepage": "https://cloudcms.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gitana/gatsby-source-graphql"
+  },
+  "keywords": [
+    "gatsby",
+    "plugin",
+    "source",
+    "gatsby-plugin",
+    "cloudcms",
+    "cms"
+  ],
+  "license": "Apache 2.0",
   "dependencies": {
     "@babel/runtime": "^7.6.2",
     "cloudcms": "^0.1.0",

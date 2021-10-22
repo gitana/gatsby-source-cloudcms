@@ -14,7 +14,7 @@ yarn add gatsby-source-cloudcms
 
 ```js
 // In your gatsby-config.js
-const gitanaJson = require('gitana.json');
+const gitanaJson = require('./gitana.json');
 
 module.exports = {
   plugins: [

@@ -1,163 +1,167 @@
-const uuidv4 = require(`uuid/v4`);
 const cloudcms = require('cloudcms');
+const { createFileNodeFromBuffer } = require("gatsby-source-filesystem");
 
-const {
-    makeRemoteExecutableSchema,
-    transformSchema,
-    RenameTypes
-} = require(`graphql-tools`);
+let session = null;
 
-const {
-    visitSchema,
-    VisitSchemaKind,
-} = require(`graphql-tools/dist/transforms/visitSchema`)
-const {
-    createResolveType,
-    fieldMapToFieldConfigMap,
-} = require(`graphql-tools/dist/stitching/schemaRecreation`)
+exports.sourceNodes = async (gatsbyApi, pluginOptions) => {
+    const { createNode, createNodeField } = gatsbyApi.actions;
+    const { createNodeId, createContentDigest, getCache } = gatsbyApi;
+    const { keys, contentQuery, repositoryId, branchId } = pluginOptions;
 
-const { 
-  GraphQLObjectType, GraphQLNonNull, GraphQLSchema,buildSchema, print, printSchema } = require(`gatsby/graphql`);
+    session = await cloudcms.connect(keys);
 
-// Transforms
+    const batchSize = 500;
+    const query = contentQuery || {};
 
-class NamespaceUnderFieldTransform {
-    constructor({ typeName, fieldName, resolver }) {
-      this.typeName = typeName
-      this.fieldName = fieldName
-      this.resolver = resolver
+    let lastBatchSize = batchSize;
+    let offset = 0;
+
+    while (lastBatchSize == batchSize)
+    {
+        const result = await session.queryNodes(repositoryId, branchId, query, { limit: batchSize, skip: offset, metadata: true})
+        for (let node of result.rows)
+        {
+            node = normalizeData(node);
+            const type = node._type;
+
+            // Replace objects containing ref with a foreign key reference
+            node = replaceRelators(node, createNodeId);
+
+            await createNode({
+                ...node,
+                id: createCloudcmsNodeId(node._doc, createNodeId),
+                parent: null,
+                children: [],
+                internal: {
+                    type: type,
+                    content: JSON.stringify(node),
+                    contentDigest: createContentDigest(node)
+                }
+            });
+
+            await sourceAttachments(node, repositoryId, branchId, { getCache, createNodeId, createNode, createNodeField });
+        }
+
+        lastBatchSize = result.size;
+        offset += result.size;
     }
-  
-    transformSchema(schema) {
-      const query = schema.getQueryType()
-      let newQuery
-      const nestedType = new GraphQLObjectType({
-        name: this.typeName,
-        fields: () =>
-          fieldMapToFieldConfigMap(
-            query.getFields(),
-            createResolveType(typeName => {
-              if (typeName === query.name) {
-                return newQuery
-              } else {
-                return schema.getType(typeName)
-              }
-            }),
-            true
-          ),
-      })
-      newQuery = new GraphQLObjectType({
-        name: query.name,
-        fields: {
-          [this.fieldName]: {
-            type: new GraphQLNonNull(nestedType),
-            resolve: (parent, args, context, info) => {
-              if (this.resolver) {
-                return this.resolver(parent, args, context, info)
-              } else {
-                return {}
-              }
-            },
-          },
-        },
-      })
-      const typeMap = schema.getTypeMap()
-      const allTypes = Object.keys(typeMap)
-        .filter(name => name !== query.name)
-        .map(key => typeMap[key])
-  
-      return new GraphQLSchema({
-        query: newQuery,
-        types: allTypes,
-      })
-    }
-}
-  
-class StripNonQueryTransform {
-    transformSchema(schema) {
-        return visitSchema(schema, {
-            [VisitSchemaKind.MUTATION]() {
-                return null
-            },
-            [VisitSchemaKind.SUBSCRIPTION]() {
-                return null
-            },
-        })
-    }
+
+
 }
 
-
-exports.sourceNodes = async ({ actions, createNodeId, createContentDigest }, options) => {
-
-    const { createNode, addThirdPartySchema } = actions;
-    const {
-        repositoryId,
-        branchId
-    } = options;
-
-    var session = await cloudcms.connect();
-    var repository = repositoryId;
-    var branch = branchId;
-
-    var schemaString = await session.graphqlSchema(repository, branch);
-    var introspectionSchema = buildSchema(schemaString);
-
-    // Performs graphql queries
-    const fetcher = async ({ query: queryDocument, variables, operationName, context }) => {
-        const query = print(queryDocument);
-
-        var result = await session.graphqlQuery(repository, branch, query, operationName, variables);
-        
-        return result;
-    };
-
-    const remoteSchema = makeRemoteExecutableSchema({
-        schema: introspectionSchema,
-        fetcher
+function streamToBuffer(stream)
+{
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        stream.once('error', (err) => reject(err));
+        stream.on('data', (chunk) => chunks.push(chunk));
+        stream.once('end', () => resolve(Buffer.concat(chunks)));
     });
+}
 
-    // Namespace
-    const nodeId = createNodeId("cloudcms-CLOUDCMS")
-    const node = createSchemaNode({
-        id: nodeId,
-        createContentDigest
-    })
-    createNode(node);
+async function sourceAttachments(node, repositoryId, branchId, { getCache, createNode, createNodeId, createNodeField })
+{
+    // setup attachments
+    if (node._system && node._system.attachments)
+    {
+        let newSystem = Object.assign({}, node._system);
 
-    const resolver = (parent, args, context) => {
-        context.nodeModel.createPageDependency({
-          path: context.path,
-          nodeId: nodeId,
-        })
-        return {}
+        for (const [key, value] of Object.entries(node._system.attachments))
+        {
+            const attachmentStream = await session.downloadAttachment(repositoryId, branchId, node._doc, key);
+            const buffer = await streamToBuffer(attachmentStream);
+
+            const file = await createFileNodeFromBuffer({
+                buffer,
+                getCache,
+                createNode,
+                createNodeId,
+                parentNodeId: node.id,
+                ext: `.${value.ext}`,
+                name: value.filename
+            });
+
+            newSystem.attachments[key][`path___NODE`] = file.id;
+        }
+
+        createNodeField(node, "_system", newSystem);
+    }
+}
+
+function replaceRelators(obj, createNodeId)
+{
+    if (obj === Object(obj))
+    {
+        let result = {};
+
+        for (const [key, value] of Object.entries(obj))
+        {   
+            if (Array.isArray(value) && value.length > 0)
+            {
+                // Check if first item is an object and has a ref. If so, need to change this property key
+                if (value[0] === Object(value[0]) && "ref" in value[0])
+                {
+                    result[`${key}___NODE`] = value.map(item => {
+                        const tokens = item.ref.split("/");
+                        const id = tokens[tokens.length - 1];
+
+                        return createCloudcmsNodeId(id, createNodeId);
+                    });
+                }
+                else
+                {
+                    // Recurse
+                    result[key] = value.map(item => {
+                        return replaceRelators(item, createNodeId);
+                    })
+                }
+            }
+            else if (value === Object(value))
+            {
+                if ("ref" in value)
+                {
+                    const tokens = value.ref.split("/");
+                    const id = tokens[tokens.length - 1];
+                    result[`${key}___NODE`] = createCloudcmsNodeId(id, createNodeId);
+                }
+                else
+                {
+                    // Recurse
+                    result[key] = replaceRelators(value, createNodeId);
+                }
+            }
+            else
+            {
+                result[key] = value;
+            }
+        }
+
+        return result;
+    }
+    else 
+    {
+        return obj;
+    }
+}
+
+function createCloudcmsNodeId(id, createNodeId)
+{
+    return createNodeId(`cloudcms-${id}`);
+}
+
+function normalizeData(node)
+{
+    const reserved = ['fields'];
+    for (reservedKey of reserved)
+    {
+        if (reservedKey in node)
+        {
+            delete node[reservedKey];
+        }
     }
 
-    const schema = transformSchema(remoteSchema, [
-        new StripNonQueryTransform() ,
-        new RenameTypes(name => `CLOUDCMS_${name}`),
-        new NamespaceUnderFieldTransform({
-          typeName: "CLOUDCMS",
-          fieldName: "cloudcms",
-          resolver,
-        })
-      ]);
+    // normalize type by replacing special characters with underscores
+    node._type = node._type.replace(/[!$():=@\[\]{|}-]/g, "_");
 
-    addThirdPartySchema({ schema });
-};
-
-function createSchemaNode({ id, createContentDigest }) {
-  const nodeContent = uuidv4()
-  const nodeContentDigest = createContentDigest(nodeContent)
-  return {
-    id,
-    typeName: "CLOUDCMS",
-    fieldName: "cloudcms",
-    parent: null,
-    children: [],
-    internal: {
-      type: `GraphQLSource`,
-      contentDigest: nodeContentDigest,
-      ignoreType: true,
-    },
-  }
+    return node;
 }

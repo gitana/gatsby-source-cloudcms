@@ -101,10 +101,10 @@ function replaceRelators(obj, createNodeId)
 
         for (const [key, value] of Object.entries(obj))
         {   
-            if (Array.isArray(value) && value.length > 0)
+            if (Array.isArray(value))
             {
                 // Check if first item is an object and has a ref. If so, need to change this property key
-                if (value[0] === Object(value[0]) && "ref" in value[0])
+                if (value.length > 0 && value[0] === Object(value[0]) && "ref" in value[0])
                 {
                     result[`${key}___NODE`] = value.map(item => {
                         const tokens = item.ref.split("/");
@@ -118,7 +118,7 @@ function replaceRelators(obj, createNodeId)
                     // Recurse
                     result[key] = value.map(item => {
                         return replaceRelators(item, createNodeId);
-                    })
+                    });
                 }
             }
             else if (value === Object(value))

@@ -19,7 +19,7 @@ const gitanaJson = require('gitana.json');
 module.exports = {
   plugins: [
     {
-      resolve: require.resolve(`/Users/mwhitman/projects/cloudcms-gatsby`),
+      resolve: `gatsby-source-cloudcms`,
       options: {
         keys: gitanaJson,
         repositoryId: `myRepositoryId`,

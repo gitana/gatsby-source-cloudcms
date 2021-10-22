@@ -71,6 +71,11 @@ async function sourceAttachments(node, repositoryId, branchId, { getCache, creat
             const attachmentStream = await session.downloadAttachment(repositoryId, branchId, node._doc, key);
             const buffer = await streamToBuffer(attachmentStream);
 
+            // Ensure filename does not have extension built in
+            let filename = value.filename;
+            const dotIndex = filename.indexOf('.');
+            filename = filename.substring(0, dotIndex != -1 ? dotIndex : filename.length);
+
             const file = await createFileNodeFromBuffer({
                 buffer,
                 getCache,
@@ -78,7 +83,7 @@ async function sourceAttachments(node, repositoryId, branchId, { getCache, creat
                 createNodeId,
                 parentNodeId: node.id,
                 ext: `.${value.ext}`,
-                name: value.filename
+                name: filename
             });
 
             newSystem.attachments[key][`path___NODE`] = file.id;

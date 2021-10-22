@@ -19,7 +19,7 @@
   ],
   "license": "Apache 2.0",
   "dependencies": {
-    "cloudcms": "^0.1.8",
+    "cloudcms": "^0.1.9",
     "gatsby-source-filesystem": "^2.11.1"
   },
   "engines": {

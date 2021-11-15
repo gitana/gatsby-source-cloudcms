@@ -1,4 +1,5 @@
 const cloudcms = require('cloudcms');
+const { UtilitySession } = require('cloudcms');
 const { createFileNodeFromBuffer } = require("gatsby-source-filesystem");
 
 let session = null;
@@ -6,9 +7,21 @@ let session = null;
 exports.sourceNodes = async (gatsbyApi, pluginOptions) => {
     const { createNode, createNodeField } = gatsbyApi.actions;
     const { createNodeId, createContentDigest, getCache } = gatsbyApi;
-    const { keys, contentQuery, repositoryId, branchId } = pluginOptions;
+    let { keys, contentQuery, repositoryId, branchId } = pluginOptions;
 
+    cloudcms.session(UtilitySession);
     session = await cloudcms.connect(keys);
+
+    if (!repositoryId)
+    {
+        repositoryId = await session.repository();
+    }
+
+    if (!branchId)
+    {
+        branchId = "master";
+    }
+
 
     const batchSize = 500;
     const query = contentQuery || {};
